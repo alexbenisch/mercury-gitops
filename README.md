@@ -181,6 +181,64 @@ The repository includes a GitHub Actions workflow that automates the complete cu
 - Application: n8n with TLS certificate
 - Secrets: Managed via Azure Key Vault
 
+### 4. Automated Customer Deprovisioning
+
+The repository includes a workflow to safely remove customers and clean up all associated resources.
+
+**Workflow: `.github/workflows/deprovision-customer.yml`**
+
+**Trigger:** Manual workflow dispatch from GitHub Actions UI
+
+**Inputs:**
+- `customer_name`: Customer identifier to remove (format: `customer2`, `customer3`, etc.)
+- `delete_dns`: Whether to delete the Cloudflare DNS record (default: true)
+
+**What It Does:**
+
+1. **Validate Customer Exists**
+   - Checks that the customer directory exists
+   - Validates customer name format
+
+2. **Delete DNS Record** (`.github/workflows/deprovision-customer.yml`)
+   - Removes Cloudflare DNS A record for `customerN.mercury.kubetest.uk`
+   - Can be skipped if you want to preserve DNS
+
+3. **Remove Kubernetes Manifests** (`.github/scripts/deprovision-customer.py`)
+   - Deletes customer directories from `apps/base/` and `apps/staging/`
+   - Removes customer reference from staging kustomization
+
+4. **Remove Terraform Resources** (`.github/scripts/remove-terraform.py`)
+   - Removes customer Key Vault secret definitions from `main.tf`
+   - Cleans up random password resources
+
+5. **Create Pull Request**
+   - Automated PR with all cleanup changes
+   - Includes verification steps
+   - Labels: `deprovisioning`, `automated`
+
+**Running the Workflow:**
+
+1. Navigate to **Actions** → **Deprovision Customer**
+2. Click **Run workflow**
+3. Fill in:
+   - Customer name: `customer3`
+   - Delete DNS: Check to remove DNS record
+4. Review and merge the generated PR
+5. Apply Terraform changes: `terraform apply`
+6. Wait for Flux to sync and remove resources
+
+**What Gets Deleted:**
+
+**Immediately (after PR merge + Flux sync):**
+- Kubernetes namespace and all pods/services
+- Persistent volumes and all data
+- Ingress routes and TLS certificates
+
+**After Terraform apply:**
+- Azure Key Vault secrets
+
+**⚠️ Warning:** All customer data is permanently deleted. This action cannot be undone.
+
 ## Security
 
 **Secrets Management:**

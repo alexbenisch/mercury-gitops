@@ -191,10 +191,81 @@ GitHub Actions Workflow
 - **TLS**: Automatic Let's Encrypt certificates via cert-manager
 - **Cloudflare API Token**: Stored in GitHub Secrets, never exposed in logs
 
+## Customer Deprovisioning
+
+### Running the Deprovision Workflow
+
+1. Go to **Actions** tab in GitHub
+2. Select **Deprovision Customer** workflow
+3. Click **Run workflow**
+4. Fill in the parameters:
+   - **customer_name**: e.g., `customer3` (must be `customerN` format)
+   - **delete_dns**: Check to remove Cloudflare DNS record
+5. Click **Run workflow**
+
+### What Happens
+
+The workflow will:
+1. ✅ Validate the customer exists
+2. ✅ Delete Cloudflare DNS A record (if selected)
+3. ✅ Remove all Kubernetes manifests
+4. ✅ Update Terraform to remove Key Vault secrets
+5. ✅ Create a pull request with all cleanup changes
+
+### After Workflow Completes
+
+1. **Review the PR**: Check what will be deleted
+2. **Merge the PR**: This triggers Flux to remove resources from the cluster
+3. **Apply Terraform**:
+   ```bash
+   cd /path/to/mercury-gitops
+   terraform plan
+   terraform apply
+   ```
+4. **Verify deletion**:
+   ```bash
+   kubectl get namespace customerN  # should show "not found"
+   az keyvault secret list --vault-name kv-mercury-staging | grep customerN  # should be empty
+   ```
+
+### Manual Deprovisioning
+
+You can also run the scripts manually:
+
+```bash
+# Remove customer manifests
+python3 .github/scripts/deprovision-customer.py customer3
+
+# Remove Terraform resources
+python3 .github/scripts/remove-terraform.py customer3
+
+# Delete DNS record manually
+# Go to https://dash.cloudflare.com and delete the A record
+```
+
+### What Gets Deleted
+
+**Kubernetes Resources (after PR merge):**
+- Namespace and all resources within it
+- PostgreSQL database cluster and all data
+- n8n deployment
+- Persistent Volume Claims (all data is lost)
+- Ingress and TLS certificates
+- Azure Key Vault SecretProviderClass
+
+**Azure Resources (after terraform apply):**
+- Key Vault secrets for database credentials
+
+**DNS (if selected):**
+- Cloudflare A record for `customerN.mercury.kubetest.uk`
+
+⚠️ **Warning:** All data is permanently deleted. This cannot be undone.
+
 ## Future Enhancements
 
 - [ ] Automated Terraform apply after PR merge
-- [ ] Customer deletion workflow
+- [x] Customer deletion workflow
 - [ ] Custom database sizes per customer
 - [ ] Multiple environments (staging, production)
-- [ ] Slack/email notifications on provisioning complete
+- [ ] Slack/email notifications on provisioning/deprovisioning complete
+- [ ] Backup customer data before deprovisioning
