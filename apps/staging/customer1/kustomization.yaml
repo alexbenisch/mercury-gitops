@@ -9,7 +9,7 @@ patches:
     patch: |-
       - op: replace
         path: /spec/parameters/userAssignedIdentityID
-        value: "REPLACE_WITH_AKS_IDENTITY_CLIENT_ID"
+        value: "49ff401d-772c-4e31-b711-f4e621375ed6"
       - op: replace
         path: /spec/parameters/tenantId
-        value: "REPLACE_WITH_AZURE_TENENT_ID"
+        value: "36e054ee-92ea-404f-97ee-2859b2462cd6"
