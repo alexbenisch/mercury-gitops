@@ -51,7 +51,7 @@ jobs:
 
       - name: Create Cloudflare DNS record
         env:
-          CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_API_TOKEN: ${{ secrets.CLOUDFLARE_DNS_KUBETEST_UK }}
           ZONE_NAME: kubetest.uk
           SUBDOMAIN: ${{ inputs.customer_name }}.mercury.kubetest.uk
           TARGET_IP: ${{ inputs.traefik_ip }}

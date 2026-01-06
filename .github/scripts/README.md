@@ -14,7 +14,7 @@ The customer provisioning system automates the creation of:
 
 ### Prerequisites
 
-1. **Cloudflare API Token**: Store in GitHub Secrets as `CLOUDFLARE_API_TOKEN`
+1. **Cloudflare API Token**: Store in GitHub Secrets as `CLOUDFLARE_DNS_KUBETEST_UK`
    - Go to: https://dash.cloudflare.com/profile/api-tokens
    - Create token with `Zone.DNS` edit permissions for `kubetest.uk`
 
