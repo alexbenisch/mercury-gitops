@@ -161,6 +161,9 @@ resource "azurerm_key_vault_secret" "customer1_db_password" {
 ## CUSTOMER2 DB credentials
 
 resource "random_password" "customer2_db_password" {
+## CUSTOMER3 DB credentials
+
+resource "random_password" "customer3_db_password" {
   length  = 24
   special = false
 
@@ -171,6 +174,8 @@ resource "random_password" "customer2_db_password" {
 
 resource "azurerm_key_vault_secret" "customer2_db_user" {
   name         = "customer2-db-user"
+resource "azurerm_key_vault_secret" "customer3_db_user" {
+  name         = "customer3-db-user"
   value        = "app"
   key_vault_id = azurerm_key_vault.mercury_vault.id
 
@@ -180,6 +185,9 @@ resource "azurerm_key_vault_secret" "customer2_db_user" {
 resource "azurerm_key_vault_secret" "customer2_db_password" {
   name         = "customer2-db-password"
   value        = random_password.customer2_db_password.result
+resource "azurerm_key_vault_secret" "customer3_db_password" {
+  name         = "customer3-db-password"
+  value        = random_password.customer3_db_password.result
   key_vault_id = azurerm_key_vault.mercury_vault.id
 
   depends_on = [azurerm_role_assignment.kv_admin]
