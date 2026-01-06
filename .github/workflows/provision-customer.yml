@@ -1,0 +1,207 @@
+name: Provision New Customer
+
+on:
+  workflow_dispatch:
+    inputs:
+      customer_name:
+        description: 'Customer name (e.g., customer2, customer3)'
+        required: true
+        type: string
+      traefik_ip:
+        description: 'Traefik LoadBalancer IP address for DNS'
+        required: true
+        type: string
+      aks_identity_client_id:
+        description: 'AKS Key Vault Secrets Provider Client ID'
+        required: false
+        type: string
+        default: '49ff401d-772c-4e31-b711-f4e621375ed6'
+      azure_tenant_id:
+        description: 'Azure Tenant ID'
+        required: false
+        type: string
+        default: '36e054ee-92ea-404f-97ee-2859b2462cd6'
+
+jobs:
+  provision:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install requests
+
+      - name: Validate customer name
+        run: |
+          if [[ ! "${{ inputs.customer_name }}" =~ ^customer[0-9]+$ ]]; then
+            echo "ERROR: Customer name must be in format 'customerN' (e.g., customer2, customer3)"
+            exit 1
+          fi
+
+      - name: Create Cloudflare DNS record
+        env:
+          CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ZONE_NAME: kubetest.uk
+          SUBDOMAIN: ${{ inputs.customer_name }}.mercury.kubetest.uk
+          TARGET_IP: ${{ inputs.traefik_ip }}
+        run: |
+          python3 - <<'EOF'
+          import os
+          import sys
+          import requests
+
+          api_token = os.getenv('CF_API_TOKEN')
+          zone_name = os.getenv('ZONE_NAME')
+          subdomain = os.getenv('SUBDOMAIN')
+          target_ip = os.getenv('TARGET_IP')
+
+          base_url = 'https://api.cloudflare.com/client/v4'
+          headers = {
+              'Authorization': f'Bearer {api_token}',
+              'Content-Type': 'application/json'
+          }
+
+          # Get zone ID
+          print(f"Looking up zone ID for: {zone_name}")
+          response = requests.get(
+              f'{base_url}/zones',
+              headers=headers,
+              params={'name': zone_name}
+          )
+          response.raise_for_status()
+          zone_id = response.json()['result'][0]['id']
+          print(f"Found zone ID: {zone_id}")
+
+          # Check for existing record
+          print(f"Checking for existing DNS record: {subdomain}")
+          response = requests.get(
+              f'{base_url}/zones/{zone_id}/dns_records',
+              headers=headers,
+              params={'name': subdomain, 'type': 'A'}
+          )
+          response.raise_for_status()
+
+          existing = response.json()['result']
+
+          if existing:
+              record_id = existing[0]['id']
+              current_ip = existing[0]['content']
+              print(f"Found existing record: {subdomain} -> {current_ip}")
+
+              if current_ip != target_ip:
+                  print(f"Updating DNS record to: {target_ip}")
+                  response = requests.put(
+                      f'{base_url}/zones/{zone_id}/dns_records/{record_id}',
+                      headers=headers,
+                      json={
+                          'type': 'A',
+                          'name': subdomain,
+                          'content': target_ip,
+                          'ttl': 1,
+                          'proxied': False
+                      }
+                  )
+                  response.raise_for_status()
+                  print("✓ DNS record updated")
+              else:
+                  print("✓ DNS record already up-to-date")
+          else:
+              print(f"Creating DNS record: {subdomain} -> {target_ip}")
+              response = requests.post(
+                  f'{base_url}/zones/{zone_id}/dns_records',
+                  headers=headers,
+                  json={
+                      'type': 'A',
+                      'name': subdomain,
+                      'content': target_ip,
+                      'ttl': 1,
+                      'proxied': False
+                  }
+              )
+              response.raise_for_status()
+              print("✓ DNS record created")
+          EOF
+
+      - name: Generate customer manifests
+        run: |
+          chmod +x .github/scripts/provision-customer.py
+          python3 .github/scripts/provision-customer.py \
+            "${{ inputs.customer_name }}" \
+            --aks-identity-client-id "${{ inputs.aks_identity_client_id }}" \
+            --azure-tenant-id "${{ inputs.azure_tenant_id }}"
+
+      - name: Update Terraform configuration
+        run: |
+          chmod +x .github/scripts/update-terraform.py
+          python3 .github/scripts/update-terraform.py "${{ inputs.customer_name }}"
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: |
+            feat: provision ${{ inputs.customer_name }}
+
+            - Add Cloudflare DNS record: ${{ inputs.customer_name }}.mercury.kubetest.uk -> ${{ inputs.traefik_ip }}
+            - Generate Kubernetes manifests for ${{ inputs.customer_name }}
+            - Add Azure Key Vault secrets for database credentials
+          branch: provision/${{ inputs.customer_name }}
+          delete-branch: true
+          title: 'feat: Provision ${{ inputs.customer_name }}'
+          body: |
+            ## Customer Provisioning
+
+            This PR provisions a new customer with the following configuration:
+
+            - **Customer Name**: `${{ inputs.customer_name }}`
+            - **Domain**: `${{ inputs.customer_name }}.mercury.kubetest.uk`
+            - **IP Address**: `${{ inputs.traefik_ip }}`
+
+            ## Changes
+
+            ### DNS
+            - ✅ Cloudflare DNS A record created/updated
+
+            ### Kubernetes Manifests
+            - ✅ Namespace: `${{ inputs.customer_name }}`
+            - ✅ PostgreSQL database cluster (3 instances)
+            - ✅ n8n deployment
+            - ✅ Ingress with TLS (Let's Encrypt)
+            - ✅ Azure Key Vault integration
+
+            ### Terraform
+            - ✅ Added Key Vault secrets for database credentials
+
+            ## Next Steps
+
+            1. Review the generated manifests
+            2. Merge this PR to trigger Flux deployment
+            3. After merge, apply Terraform changes:
+               ```bash
+               terraform plan
+               terraform apply
+               ```
+            4. Wait for Flux to sync (check with `flux get kustomizations`)
+            5. Verify deployment: `kubectl get pods -n ${{ inputs.customer_name }}`
+            6. Access n8n at: https://${{ inputs.customer_name }}.mercury.kubetest.uk
+
+            ## Rollback
+
+            To remove this customer:
+            1. Delete the customer directories and Terraform resources
+            2. Run `terraform apply` to remove Key Vault secrets
+            3. Delete the DNS record from Cloudflare
+          labels: |
+            provisioning
+            automated

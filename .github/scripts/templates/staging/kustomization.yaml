@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base/{{CUSTOMER_NAME}}/
+patches:
+  - target:
+      kind: SecretProviderClass
+      name: {{CUSTOMER_NAME}}-secrets
+    patch: |-
+      - op: replace
+        path: /spec/parameters/userAssignedIdentityID
+        value: "{{AKS_IDENTITY_CLIENT_ID}}"
+      - op: replace
+        path: /spec/parameters/tenantId
+        value: "{{AZURE_TENANT_ID}}"

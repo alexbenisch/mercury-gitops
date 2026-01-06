@@ -1,0 +1,23 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{CUSTOMER_NAME}}-ingress
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - {{CUSTOMER_NAME}}.mercury.kubetest.uk
+      secretName: {{CUSTOMER_NAME}}-tls
+  rules:
+    - host: {{CUSTOMER_NAME}}.mercury.kubetest.uk
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{CUSTOMER_NAME}}-n8n
+                port:
+                  number: 3008
