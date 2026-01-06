@@ -1,0 +1,31 @@
+{
+  "name": "Managed AKS Cluster",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "installZsh": true,
+      "installOhMyZsh": false,
+      "upgradePackages": true,
+      "username": "vscode",
+      "userUid": 1000,
+      "userGid": 1000
+    },
+    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/devcontainers/features/terraform:1.4.2": {}
+  },
+  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y libatomic1 && sh -c \"$(curl -fsLS get.chezmoi.io)\" -- init --apply --source ~/.local/share/dotfiles alexbenisch/dotfiles || true",
+  "postStartCommand": "sudo -u vscode /home/vscode/bin/chezmoi apply --source ~/.local/share/dotfiles 2>/dev/null || true",
+  "customizations": {
+    "vscode": {
+      "extensions": []
+    }
+  },
+  "mounts": [
+    "source=${localEnv:HOME}/.ssh/mercury,target=/home/vscode/.ssh/mercury,type=bind,consistency=cached,readonly",
+    "source=${localEnv:HOME}/.ssh/mercury.pub,target=/home/vscode/.ssh/mercury.pub,type=bind,consistency=cached,readonly"
+  ],
+  "remoteEnv": {
+    "GITHUB_TOKEN": "${localEnv:GITHUB_TOKEN}"
+  },
+  "remoteUser": "vscode"
+}
