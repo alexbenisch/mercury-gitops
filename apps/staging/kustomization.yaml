@@ -3,4 +3,3 @@ kind: Kustomization
 resources:
   - customer1
   - customer2
-  - customer3
