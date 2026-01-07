@@ -453,6 +453,7 @@ When troubleshooting Kubernetes applications, follow this sequence:
 
 - [Flux Documentation](https://fluxcd.io/docs/)
 - [CloudNativePG Documentation](https://cloudnative-pg.io/)
+- [Deploy highly available PostgreSQL on AKS with CloudNativePG](https://learn.microsoft.com/en-us/azure/aks/create-postgresql-ha) - Microsoft Learn guide
 - [Traefik Documentation](https://doc.traefik.io/traefik/)
 - [cert-manager Documentation](https://cert-manager.io/docs/)
 - [Azure Key Vault CSI Driver](https://github.com/Azure/secrets-store-csi-driver-provider-azure)
