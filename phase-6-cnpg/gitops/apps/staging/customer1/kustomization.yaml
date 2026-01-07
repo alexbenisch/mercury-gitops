@@ -1,0 +1,22 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base/customer1/
+patches:
+  - target:
+      kind: SecretProviderClass
+      name: customer1-secrets
+    patch: |-
+      - op: replace
+        path: /spec/parameters/userAssignedIdentityID
+        value: "ba750c78-ea9e-4964-acab-df8e9351d0c6"
+      - op: replace
+        path: /spec/parameters/tenantId
+        value: "6c0d1498-a808-4d41-a865-fdebeb412738"
+  - target:
+      kind: ObjectStore
+      name: customer1-objectstore
+    patch: |-
+      - op: replace
+        path: /spec/configuration/destinationPath
+        value: "https://alexmercurybackup.blob.core.windows.net/customer1"
