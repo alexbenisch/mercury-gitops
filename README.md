@@ -4,7 +4,7 @@ Provisioning and Deployment of a Managed Kubernetes Cluster on Azure
 
 ## Overview
 
-This repository implements a complete GitOps workflow for managing a multi-tenant Kubernetes cluster on Azure Kubernetes Service (AKS). It combines Infrastructure as Code (Terraform) with GitOps (Flux) to provide automated customer provisioning and deployment.
+This repository implements a GitOps workflow for managing a Kubernetes cluster on Azure Kubernetes Service (AKS). It combines Infrastructure as Code (Terraform) with GitOps (Flux) to provide automated deployment of infrastructure and applications.
 
 ## Architecture
 
@@ -13,7 +13,7 @@ This repository implements a complete GitOps workflow for managing a multi-tenan
 │                         GitHub Repository                        │
 │  ┌──────────────┐  ┌─────────────────┐  ┌──────────────────┐   │
 │  │  Terraform   │  │ Infrastructure  │  │  Applications    │   │
-│  │   (main.tf)  │  │   (Flux sync)   │  │  (Customer apps) │   │
+│  │   (main.tf)  │  │   (Flux sync)   │  │    (customer1)   │   │
 │  └──────────────┘  └─────────────────┘  └──────────────────┘   │
 └─────────────────────────────────────────────────────────────────┘
          │                      │                       │
@@ -25,7 +25,7 @@ This repository implements a complete GitOps workflow for managing a multi-tenan
          │                      │                       │
          ▼                      ▼                       ▼
 ┌─────────────────┐   ┌────────────────┐    ┌──────────────────┐
-│  Azure Key      │   │ Infrastructure │    │  Customer Apps   │
+│  Azure Key      │   │ Infrastructure │    │   Application    │
 │  Vault          │   │  - Traefik     │    │  - PostgreSQL    │
 │  (Secrets)      │   │  - cert-mgr    │    │  - n8n           │
 └─────────────────┘   │  - CNPG        │    │  - Ingress/TLS   │
@@ -44,21 +44,14 @@ mercury-gitops/
 │   └── configs/                 # Infrastructure configs (ClusterIssuers, etc.)
 │       ├── base/
 │       └── staging/
-├── apps/                        # Customer applications (Flux-managed)
-│   ├── base/                    # Base Kubernetes manifests per customer
-│   │   └── customer1/
-│   └── staging/                 # Environment-specific overlays
-│       └── customer1/
-└── .github/
-    ├── workflows/               # GitHub Actions workflows
-    │   └── provision-customer.yml
-    └── scripts/                 # Automation scripts
-        ├── provision-customer.py
-        ├── update-terraform.py
-        └── templates/           # K8s manifest templates
+└── apps/                        # Applications (Flux-managed)
+    ├── base/                    # Base Kubernetes manifests
+    │   └── customer1/
+    └── staging/                 # Environment-specific overlays
+        └── customer1/
 ```
 
-## Workflows
+## Getting Started
 
 ### 1. Initial Infrastructure Setup (Terraform)
 
@@ -73,7 +66,7 @@ The `main.tf` file provisions the complete Azure infrastructure:
   - Three Flux kustomizations with dependency chain:
     1. `infra-controllers` - Infrastructure Helm releases
     2. `infra-configs` - Infrastructure configurations
-    3. `apps` - Customer applications
+    3. `apps` - Applications
 - Azure Key Vault for secrets management
   - RBAC-based access control
   - Integration with AKS CSI Secrets Store
@@ -93,7 +86,7 @@ Flux continuously monitors this repository and automatically deploys changes to 
 
 **Sync Flow:**
 ```
-main.tf:75-96 → Flux Configuration
+main.tf → Flux Configuration
     ↓
 1. infra-controllers (5 min sync)
    - Installs: Traefik, cert-manager, CloudNativePG
@@ -102,269 +95,190 @@ main.tf:75-96 → Flux Configuration
    - Configures: Let's Encrypt ClusterIssuers
     ↓
 3. apps (5 min sync, depends on configs)
-   - Deploys: All customer applications
+   - Deploys: customer1 application stack
 ```
-
-**Infrastructure Components:**
-- **Traefik**: Ingress controller and load balancer
-- **cert-manager**: Automatic TLS certificate management (Let's Encrypt)
-- **CloudNativePG (CNPG)**: PostgreSQL operator for database clusters
 
 **Monitoring Flux:**
 ```bash
-# Check Flux status
+# Check all kustomizations
 flux get kustomizations
 
 # Force reconciliation
 flux reconcile kustomization apps --with-source
 
 # View logs
-flux logs --level=info
+flux logs --all-namespaces --follow
 ```
 
-### 3. Automated Customer Provisioning
+## Application Stack
 
-The repository includes a GitHub Actions workflow that automates the complete customer onboarding process.
+### Customer1 Deployment
 
-**Workflow: `.github/workflows/provision-customer.yml`**
+The application stack includes:
 
-**Trigger:** Manual workflow dispatch from GitHub Actions UI
+- **Namespace**: `customer1`
+- **PostgreSQL Database**: CloudNativePG cluster (3 instances)
+- **n8n**: Workflow automation tool
+- **Ingress**: Traefik with Let's Encrypt TLS
+- **Secrets**: Azure Key Vault integration via CSI driver
 
-**Inputs:**
-- `customer_name`: Customer identifier (format: `customer2`, `customer3`, etc.)
-- `traefik_ip`: External IP of Traefik LoadBalancer
-- `aks_identity_client_id`: AKS Key Vault Secrets Provider Client ID (optional)
-- `azure_tenant_id`: Azure Tenant ID (optional)
+**DNS**: `customer1.mercury.kubetest.uk`
 
-**What It Does:**
+### Components
 
-1. **DNS Setup** (`.github/workflows/provision-customer.yml:52-134`)
-   - Creates/updates Cloudflare DNS A record
-   - Maps `customerN.mercury.kubetest.uk` to Traefik IP
-   - Uses Cloudflare API with token from GitHub Secrets
+1. **Database** (`apps/base/customer1/database.yaml`)
+   - CloudNativePG Cluster
+   - 3 PostgreSQL instances (1 primary, 2 replicas)
+   - Persistent storage
 
-2. **Generate Kubernetes Manifests** (`.github/scripts/provision-customer.py`)
-   - Creates namespace and resources from templates
-   - Generates for each customer:
-     - Namespace
-     - PostgreSQL cluster (3-instance HA setup via CNPG)
-     - Azure Key Vault SecretProviderClass
-     - n8n deployment (workflow automation)
-     - Service and Ingress with TLS
-     - ConfigMaps and storage
+2. **n8n Deployment** (`apps/base/customer1/deployment.yaml`)
+   - n8n workflow automation
+   - Connected to PostgreSQL
+   - Persistent workflow storage
 
-3. **Update Terraform** (`.github/scripts/update-terraform.py`)
-   - Adds customer database credentials to `main.tf`
-   - Generates secure random passwords
-   - Configures Key Vault secrets
+3. **Secrets** (`apps/base/customer1/secrets.yaml`)
+   - Azure Key Vault SecretProviderClass
+   - Mounts database credentials from Key Vault
+   - Creates Kubernetes secrets for application use
 
-4. **Create Pull Request**
-   - Automated PR with all generated resources
-   - Includes detailed deployment instructions
-   - Labels: `provisioning`, `automated`
-
-**Running the Workflow:**
-
-1. Navigate to **Actions** → **Provision New Customer**
-2. Click **Run workflow**
-3. Fill in:
-   - Customer name: `customer2`
-   - Traefik IP: Get via `kubectl get svc -n traefik traefik -o jsonpath='{.status.loadBalancer.ingress[0].ip}'`
-4. Review and merge the generated PR
-5. Apply Terraform changes: `terraform apply`
-6. Wait for Flux to sync (auto, or `flux reconcile kustomization apps`)
-
-**Result:**
-- DNS: `https://customer2.mercury.kubetest.uk`
-- Namespace: `customer2`
-- Database: PostgreSQL 3-node cluster
-- Application: n8n with TLS certificate
-- Secrets: Managed via Azure Key Vault
-
-### 4. Automated Customer Deprovisioning
-
-The repository includes a workflow to safely remove customers and clean up all associated resources.
-
-**Workflow: `.github/workflows/deprovision-customer.yml`**
-
-**Trigger:** Manual workflow dispatch from GitHub Actions UI
-
-**Inputs:**
-- `customer_name`: Customer identifier to remove (format: `customer2`, `customer3`, etc.)
-- `delete_dns`: Whether to delete the Cloudflare DNS record (default: true)
-
-**What It Does:**
-
-1. **Validate Customer Exists**
-   - Checks that the customer directory exists
-   - Validates customer name format
-
-2. **Delete DNS Record** (`.github/workflows/deprovision-customer.yml`)
-   - Removes Cloudflare DNS A record for `customerN.mercury.kubetest.uk`
-   - Can be skipped if you want to preserve DNS
-
-3. **Remove Kubernetes Manifests** (`.github/scripts/deprovision-customer.py`)
-   - Deletes customer directories from `apps/base/` and `apps/staging/`
-   - Removes customer reference from staging kustomization
-
-4. **Remove Terraform Resources** (`.github/scripts/remove-terraform.py`)
-   - Removes customer Key Vault secret definitions from `main.tf`
-   - Cleans up random password resources
-
-5. **Create Pull Request**
-   - Automated PR with all cleanup changes
-   - Includes verification steps
-   - Labels: `deprovisioning`, `automated`
-
-**Running the Workflow:**
-
-1. Navigate to **Actions** → **Deprovision Customer**
-2. Click **Run workflow**
-3. Fill in:
-   - Customer name: `customer3`
-   - Delete DNS: Check to remove DNS record
-4. Review and merge the generated PR
-5. Apply Terraform changes: `terraform apply`
-6. Wait for Flux to sync and remove resources
-
-**What Gets Deleted:**
-
-**Immediately (after PR merge + Flux sync):**
-- Kubernetes namespace and all pods/services
-- Persistent volumes and all data
-- Ingress routes and TLS certificates
-
-**After Terraform apply:**
-- Azure Key Vault secrets
-
-**⚠️ Warning:** All customer data is permanently deleted. This action cannot be undone.
-
-## Security
-
-**Secrets Management:**
-- All secrets stored in Azure Key Vault (never in Git)
-- CSI Secrets Store driver mounts secrets at runtime
-- Automatic rotation support
-- RBAC-based access control
-
-**TLS/SSL:**
-- Automatic Let's Encrypt certificates via cert-manager
-- HTTP to HTTPS redirect via Traefik
-- Per-customer certificate management
-
-**Network Security:**
-- Cilium network policy enforcement
-- Namespace isolation per customer
-- Azure CNI with network policies
+4. **Ingress** (`apps/base/customer1/ingress.yaml`)
+   - Traefik IngressRoute
+   - Automatic TLS via cert-manager
+   - Let's Encrypt certificate
 
 ## Common Operations
 
-### Deploy a New Customer
-
-Use the GitHub Actions workflow (see Automated Customer Provisioning above)
-
-### View Customer Resources
+### Checking Deployment Status
 
 ```bash
-# List all customer namespaces
-kubectl get namespaces | grep customer
-
-# View customer pods
+# Check all pods
 kubectl get pods -n customer1
 
-# Check database cluster
+# Check specific resources
 kubectl get cluster -n customer1
-
-# View ingress
+kubectl get deployment -n customer1
 kubectl get ingress -n customer1
+
+# Describe a resource
+kubectl describe pod <pod-name> -n customer1
 ```
 
-### Update Customer Configuration
+### Viewing Logs
 
-1. Edit manifests in `apps/base/customerN/` or `apps/staging/customerN/`
-2. Commit and push changes
-3. Flux automatically syncs within 5 minutes
+```bash
+# Application logs
+kubectl logs -n customer1 -l app=customer1-n8n
 
-### Access Customer Application
-
-Each customer gets a dedicated subdomain:
-- URL: `https://customerN.mercury.kubetest.uk`
-- TLS certificate: Automatically issued by Let's Encrypt
-- Backend: n8n workflow automation platform
+# Database logs
+kubectl logs -n customer1 -l cnpg.io/cluster=customer1-db
+```
 
 ### Troubleshooting
 
-**Check Flux sync status:**
+#### Pods Not Starting
+
 ```bash
-flux get all -A
+# Check pod events
+kubectl describe pod <pod-name> -n customer1
+
+# Check secrets are mounted correctly
+kubectl get secretproviderclass -n customer1
+kubectl describe secretproviderclass customer1-secrets -n customer1
 ```
 
-**View Flux logs:**
+#### Database Connection Issues
+
 ```bash
-flux logs
+# Check database status
+kubectl get cluster -n customer1 customer1-db -o yaml
+
+# Verify secrets exist
+kubectl get secret -n customer1 customer1-db-credentials
 ```
 
-**Check certificate status:**
+#### Certificate Issues
+
 ```bash
-kubectl describe certificate -n customerN
+# Check certificate status
+kubectl get certificate -n customer1
+kubectl describe certificate customer1-tls -n customer1
+
+# Check cert-manager logs
+kubectl logs -n cert-manager -l app=cert-manager
 ```
 
-**Database connectivity:**
+## Azure Key Vault Integration
+
+The application uses Azure Key Vault to store sensitive data:
+
+**Secrets Stored:**
+- `customer1-db-user`: Database username
+- `customer1-db-password`: Database password
+
+**Access Method:**
+- AKS Managed Identity authenticates to Key Vault
+- CSI Secrets Store driver mounts secrets as volumes
+- Secrets are synced to Kubernetes Secret objects
+
+**Checking Secrets:**
 ```bash
-kubectl logs -n customerN <pod-name>
-kubectl describe secretproviderclass -n customerN
+# List secrets in Key Vault
+az keyvault secret list --vault-name kv-mercury-staging
+
+# Get a secret value
+az keyvault secret show --vault-name kv-mercury-staging --name customer1-db-user
 ```
 
-**Force sync:**
+## Making Changes
+
+### Modifying Application Configuration
+
+1. Edit files in `apps/base/customer1/` or `apps/staging/customer1/`
+2. Commit and push changes
+3. Flux will automatically sync (or force with `flux reconcile kustomization apps`)
+
+### Updating Terraform Infrastructure
+
+1. Modify `main.tf`
+2. Run `terraform plan` to preview changes
+3. Run `terraform apply` to apply changes
+
+## Security Notes
+
+- **Secrets**: Never commit secrets to git
+- **Key Vault**: All sensitive data stored in Azure Key Vault
+- **CSI Driver**: Secrets mounted at runtime via CSI driver
+- **TLS**: Automatic Let's Encrypt certificates via cert-manager
+- **RBAC**: Azure RBAC controls Key Vault access
+
+## Useful Commands
+
 ```bash
+# Get Traefik external IP
+kubectl get svc -n traefik traefik
+
+# Check Flux reconciliation
+flux get sources git
+flux get kustomizations
+
+# Force Flux to sync immediately
+flux reconcile source git flux-system
+flux reconcile kustomization infra-controllers --with-source
+flux reconcile kustomization infra-configs --with-source
 flux reconcile kustomization apps --with-source
+
+# View Flux logs
+flux logs
+
+# Suspend/resume a kustomization
+flux suspend kustomization apps
+flux resume kustomization apps
 ```
 
-## Prerequisites
+## Learning Resources
 
-**Required:**
-- Azure subscription
-- Azure CLI (`az`) authenticated
-- Terraform >= 1.0
-- kubectl
-- flux CLI
-- SSH key for GitHub repository access (`~/.ssh/mercury`)
-
-**GitHub Secrets:**
-- `CLOUDFLARE_DNS_KUBETEST_UK`: For DNS management
-
-## Development
-
-**Local Testing:**
-```bash
-# Validate Terraform
-terraform validate
-
-# Plan changes
-terraform plan
-
-# Test Flux kustomizations locally
-flux build kustomization apps --path ./apps/staging
-
-# Dry-run customer provisioning
-python3 .github/scripts/provision-customer.py customer-test --dry-run
-```
-
-## Future Enhancements
-
-- Automated Terraform apply after PR merge
-- Customer deletion workflow
-- Multiple environments (production, dev)
-- Resource quotas per customer
-- Monitoring and alerting setup
-- Backup and disaster recovery
-
-## Documentation
-
-- Customer provisioning scripts: `.github/scripts/README.md`
-- Terraform outputs: `terraform output`
-- Flux documentation: https://fluxcd.io/flux/
-
-## License
-
-[Add your license here]
+- [Flux Documentation](https://fluxcd.io/docs/)
+- [CloudNativePG Documentation](https://cloudnative-pg.io/)
+- [Traefik Documentation](https://doc.traefik.io/traefik/)
+- [cert-manager Documentation](https://cert-manager.io/docs/)
+- [Azure Key Vault CSI Driver](https://github.com/Azure/secrets-store-csi-driver-provider-azure)

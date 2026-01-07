@@ -157,33 +157,6 @@ resource "azurerm_key_vault_secret" "customer1_db_password" {
   depends_on = [azurerm_role_assignment.kv_admin]
 }
 
-## Customer2 DB credentials
-
-resource "random_password" "customer2_db_password" {
-  length  = 24
-  special = false
-
-  lifecycle {
-    ignore_changes = all
-  }
-}
-
-resource "azurerm_key_vault_secret" "customer2_db_user" {
-  name         = "customer2-db-user"
-  value        = "app"
-  key_vault_id = azurerm_key_vault.mercury_vault.id
-
-  depends_on = [azurerm_role_assignment.kv_admin]
-}
-
-resource "azurerm_key_vault_secret" "customer2_db_password" {
-  name         = "customer2-db-password"
-  value        = random_password.customer2_db_password.result
-  key_vault_id = azurerm_key_vault.mercury_vault.id
-
-  depends_on = [azurerm_role_assignment.kv_admin]
-}
-
 output "key_vault_name" {
   value = azurerm_key_vault.mercury_vault.name
 }
