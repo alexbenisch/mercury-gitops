@@ -13,7 +13,7 @@
     "ghcr.io/devcontainers/features/git:1": {},
     "ghcr.io/devcontainers/features/terraform:1.4.2": {}
   },
-  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y libatomic1 && sh -c \"$(curl -fsLS get.chezmoi.io)\" -- init --apply --source ~/.local/share/dotfiles alexbenisch/dotfiles || true && mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo 'Host github.com\n  StrictHostKeyChecking no\n  UserKnownHostsFile=/dev/null\n  IdentityFile ~/.ssh/mercury' > ~/.ssh/config && chmod 600 ~/.ssh/config",
+  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y libatomic1 && sh -c \"$(curl -fsLS get.chezmoi.io)\" -- init --apply --source ~/.local/share/dotfiles alexbenisch/dotfiles || true && mkdir -p ~/.ssh && chmod 700 ~/.ssh && printf 'Host github.com\\n  StrictHostKeyChecking no\\n  UserKnownHostsFile=/dev/null\\n  IdentityFile ~/.ssh/mercury\\n' > ~/.ssh/config && chmod 600 ~/.ssh/config",
   "postStartCommand": "sudo -u vscode /home/vscode/bin/chezmoi apply --source ~/.local/share/dotfiles 2>/dev/null || true",
   "customizations": {
     "vscode": {
