@@ -51,6 +51,20 @@ mercury-gitops/
         └── customer1/
 ```
 
+## Prerequisites
+
+Before getting started, you'll need to install the following tools:
+
+- **cmctl** - cert-manager CLI tool
+  - Installation guide: https://cert-manager.io/docs/reference/cmctl/#installation
+
+- **CloudNativePG barman-cloud plugin** - For PostgreSQL backup and recovery
+  - Installation guide: https://cloudnative-pg.io/plugin-barman-cloud/docs/installation/#installing-the-barman-cloud-plugin
+  - **Requirements**: CloudNativePG operator (cnpg-controller-manager) version 1.26 or newer must be installed in your cluster
+  - CloudNativePG installation guide: https://cloudnative-pg.io/docs/1.28/installation_upgrade
+
+Both cmctl and the barman-cloud plugin can be installed using [mise](https://mise.jdx.dev/).
+
 ## Getting Started
 
 ### 1. Initial Infrastructure Setup (Terraform)
@@ -145,6 +159,137 @@ The application stack includes:
    - Traefik IngressRoute
    - Automatic TLS via cert-manager
    - Let's Encrypt certificate
+
+## PostgreSQL Backup Configuration
+
+CloudNativePG supports automated backups to Azure Blob Storage using the barman-cloud plugin. Before you can create backups, you need to set up the storage infrastructure.
+
+### Prerequisites for Backups
+
+The backup infrastructure is defined in `phase-6-cnpg/backups.tf` and includes:
+
+1. **Azure Storage Account** - Blob storage for backup files
+2. **Storage Container** - Container for customer-specific backups
+3. **SAS Token** - Time-limited access token (valid for 2 years)
+4. **Key Vault Secrets** - Storage account name and SAS token stored in Azure Key Vault
+
+### Setting Up Backup Storage
+
+**Step 1: Apply Terraform Configuration**
+
+The `backups.tf` file creates:
+- Storage account: `alexmercurybackupsstaging`
+- Container: `customer1`
+- SAS token with read/write/delete/list permissions
+- Key Vault secrets for storage credentials
+
+```bash
+cd phase-6-cnpg
+terraform init
+terraform plan
+terraform apply
+```
+
+**Step 2: Verify Storage Account**
+
+```bash
+# Get storage account name
+terraform output storage_account_name
+
+# Get backup destination path
+terraform output customer1_backup_path
+
+# Verify Key Vault secrets
+az keyvault secret list --vault-name kv-mercury-staging | grep -E "storage-account-name|customer1-blob-sas"
+```
+
+**Step 3: Configure CloudNativePG Cluster**
+
+Update the `Cluster` resource in `apps/base/customer1/database.yaml` to include backup configuration:
+
+```yaml
+spec:
+  backup:
+    barmanObjectStore:
+      destinationPath: https://alexmercurybackupsstaging.blob.core.windows.net/customer1
+      azureCredentials:
+        storageAccount:
+          name: customer1-backup-secrets
+          key: STORAGE_ACCOUNT_NAME
+        storageSasToken:
+          name: customer1-backup-secrets
+          key: STORAGE_SAS_TOKEN
+      wal:
+        compression: gzip
+    retentionPolicy: "30d"
+```
+
+**Step 4: Create SecretProviderClass for Backup Credentials**
+
+Add Azure Key Vault secrets to the cluster configuration to mount the storage credentials:
+
+```yaml
+apiVersion: secrets-store.csi.x-k8s.io/v1
+kind: SecretProviderClass
+metadata:
+  name: customer1-backup-secrets
+spec:
+  provider: azure
+  secretObjects:
+  - secretName: customer1-backup-secrets
+    type: Opaque
+    data:
+    - key: STORAGE_ACCOUNT_NAME
+      objectName: storage-account-name
+    - key: STORAGE_SAS_TOKEN
+      objectName: customer1-blob-sas
+  parameters:
+    usePodIdentity: "false"
+    useVMManagedIdentity: "true"
+    userAssignedIdentityID: "<managed-identity-client-id>"
+    keyvaultName: "kv-mercury-staging"
+    tenantId: "<tenant-id>"
+    objects: |
+      array:
+        - |
+          objectName: "storage-account-name"
+          objectType: "secret"
+        - |
+          objectName: "customer1-blob-sas"
+          objectType: "secret"
+```
+
+**Step 5: Create Backups**
+
+Once configured, you can create on-demand backups:
+
+```bash
+# Create a one-time backup
+kubectl cnpg backup customer1-db -n customer1
+
+# Check backup status
+kubectl get backup -n customer1
+
+# View backup details
+kubectl describe backup <backup-name> -n customer1
+```
+
+### Scheduled Backups
+
+CloudNativePG also supports scheduled backups using `ScheduledBackup` resources:
+
+```yaml
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: customer1-daily-backup
+  namespace: customer1
+spec:
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  backupOwnerReference: self
+  cluster:
+    name: customer1-db
+```
 
 ## Common Operations
 
