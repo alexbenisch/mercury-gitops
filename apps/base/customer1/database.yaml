@@ -25,9 +25,3 @@ spec:
         storageSasToken:
           name: customer1-backup-creds
           key: customer1-blob-sas
-
-  plugins:
-    - name: barman-cloud.cloudnative-pg.io
-      isWALArchiver: true
-      parameters:
-        barmanObjectName: customer1-objectstore
