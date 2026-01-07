@@ -275,6 +275,180 @@ flux suspend kustomization apps
 flux resume kustomization apps
 ```
 
+## Troubleshooting & Lessons Learned
+
+This section documents real issues encountered during setup and how they were resolved.
+
+### Issue 1: Pods Stuck in ContainerCreating - Azure Key Vault Authentication
+
+**Symptoms:**
+```bash
+flux get kustomizations
+# NAME                     READY    MESSAGE
+# mercury-system-apps      False    health check failed: Deployment/customer1/customer1-n8n status: 'Failed'
+
+kubectl get pods -n customer1
+# customer1-n8n-xxx   0/1   ContainerCreating   0   26m
+```
+
+**Root Cause:**
+Pods were failing to mount Azure Key Vault secrets via the CSI driver. The error message indicated:
+```
+ManagedIdentityCredential authentication failed. the requested identity isn't assigned to this resource
+Identity not found
+```
+
+This occurred because:
+1. The `userAssignedIdentityID` in `SecretProviderClass` was using an incorrect client ID
+2. The `tenantId` was using the subscription ID instead of the actual Azure tenant ID
+
+**Diagnosis Steps:**
+```bash
+# 1. Check pod status
+kubectl describe pod <pod-name> -n customer1
+
+# 2. Look for mount errors in events
+kubectl get events -n customer1 --sort-by='.lastTimestamp'
+
+# 3. Check SecretProviderClass configuration
+kubectl get secretproviderclass customer1-secrets -n customer1 -o yaml
+
+# 4. Get correct values from Terraform
+terraform output aks_keyvault_secrets_provider_client_id
+terraform state show data.azurerm_client_config.current | grep tenant_id
+```
+
+**Solution:**
+1. Updated `apps/staging/customer1/kustomization.yaml` with correct values:
+   ```yaml
+   patches:
+     - target:
+         kind: SecretProviderClass
+         name: customer1-secrets
+       patch: |-
+         - op: replace
+           path: /spec/parameters/userAssignedIdentityID
+           value: "48603787-7f9f-4c17-9071-677bcae61660"  # From terraform output
+         - op: replace
+           path: /spec/parameters/tenantId
+           value: "36e054ee-92ea-404f-97ee-2859b2462cd6"  # From terraform state
+   ```
+
+2. Deleted the pod to force recreation with correct configuration:
+   ```bash
+   kubectl delete pod -n customer1 -l app=customer1-n8n
+   ```
+
+**Key Learnings:**
+- Always verify Azure identity client IDs and tenant IDs match what Terraform outputs
+- The AKS Key Vault Secrets Provider creates a managed identity - get its client ID from `terraform output`
+- Subscription ID ≠ Tenant ID (common mistake)
+- Pods don't automatically restart when SecretProviderClass is updated - manual restart required
+
+### Issue 2: Application Not Reachable - Wrong IngressClass Name
+
+**Symptoms:**
+```bash
+curl -I https://customer1.mercury.kubetest.uk
+# HTTP/2 404
+# content-type: text/plain; charset=utf-8
+```
+
+The connection reached Traefik (getting HTTP response), but returned 404.
+
+**Root Cause:**
+The Ingress resource was configured with `ingressClassName: traefik`, but the actual IngressClass created by the Traefik Helm chart was named `traefik-traefik`.
+
+When Helm releases create IngressClasses, they follow the naming pattern: `{release-name}-traefik`
+
+**Diagnosis Steps:**
+```bash
+# 1. Verify DNS resolves correctly
+nslookup customer1.mercury.kubetest.uk
+# Should return Traefik LoadBalancer IP
+
+# 2. Check Traefik is running and has external IP
+kubectl get svc -n traefik
+
+# 3. Test the pod directly (should work)
+kubectl exec -n customer1 <pod-name> -- wget -O- http://localhost:3008
+
+# 4. Check actual IngressClass names in cluster
+kubectl get ingressclass
+# NAME              CONTROLLER
+# traefik-traefik   traefik.io/ingress-controller   <- Note the name!
+
+# 5. Compare with Ingress configuration
+kubectl describe ingress customer1-ingress -n customer1
+# Ingress Class:    traefik  <- Mismatch!
+```
+
+**Solution:**
+Updated `apps/base/customer1/ingress.yaml`:
+```yaml
+spec:
+  ingressClassName: traefik-traefik  # Changed from 'traefik'
+```
+
+**Key Learnings:**
+- Helm chart release names affect IngressClass naming
+- Always check actual IngressClass names: `kubectl get ingressclass`
+- A 404 from Traefik means it received the request but couldn't route it (vs connection refused = Traefik not running)
+- Test the pod directly first to isolate networking vs application issues
+- IngressClass mismatch is a common issue when using Helm charts
+
+### Common Debugging Workflow
+
+When troubleshooting Kubernetes applications, follow this sequence:
+
+1. **Check Flux sync status**
+   ```bash
+   flux get kustomizations
+   ```
+
+2. **Check pod status**
+   ```bash
+   kubectl get pods -n <namespace>
+   kubectl describe pod <pod-name> -n <namespace>
+   ```
+
+3. **Check pod logs**
+   ```bash
+   kubectl logs -n <namespace> <pod-name>
+   ```
+
+4. **Check events**
+   ```bash
+   kubectl get events -n <namespace> --sort-by='.lastTimestamp'
+   ```
+
+5. **Verify services and endpoints**
+   ```bash
+   kubectl get svc -n <namespace>
+   kubectl get endpoints -n <namespace>
+   ```
+
+6. **Test connectivity**
+   ```bash
+   # From within the cluster
+   kubectl exec -n <namespace> <pod-name> -- wget -O- http://service:port
+
+   # From outside
+   curl -I https://your-domain.com
+   ```
+
+7. **Check ingress/routing**
+   ```bash
+   kubectl get ingress -n <namespace>
+   kubectl get ingressclass
+   kubectl describe ingress <name> -n <namespace>
+   ```
+
+8. **Check Traefik logs** (if using Traefik)
+   ```bash
+   kubectl logs -n traefik -l app.kubernetes.io/name=traefik
+   ```
+
 ## Learning Resources
 
 - [Flux Documentation](https://fluxcd.io/docs/)
