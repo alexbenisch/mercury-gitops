@@ -7,13 +7,13 @@
       "installOhMyZsh": false,
       "upgradePackages": true,
       "username": "vscode",
-      "userUid": 1000,
-      "userGid": 1000
+      "userUid": "automatic",
+      "userGid": "automatic"
     },
     "ghcr.io/devcontainers/features/git:1": {},
     "ghcr.io/devcontainers/features/terraform:1.4.2": {}
   },
-  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y libatomic1 && sh -c \"$(curl -fsLS get.chezmoi.io)\" -- init --apply --source ~/.local/share/dotfiles alexbenisch/dotfiles || true && mkdir -p ~/.ssh && chmod 700 ~/.ssh && printf 'Host github.com\\n  StrictHostKeyChecking no\\n  UserKnownHostsFile=/dev/null\\n  IdentityFile ~/.ssh/mercury\\n' > ~/.ssh/config && chmod 600 ~/.ssh/config",
+  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y libatomic1 && (sh -c \"$(curl -fsLS get.chezmoi.io)\" -- init --apply --source ~/.local/share/dotfiles alexbenisch/dotfiles || true) && (sudo sh -c 'printf \"Host github.com\\nStrictHostKeyChecking no\\nUserKnownHostsFile=/dev/null\\nIdentityFile ~/.ssh/mercury\\n\" > /home/vscode/.ssh/config && chown vscode:vscode /home/vscode/.ssh/config && chmod 600 /home/vscode/.ssh/config' || true) && (mise trust /workspaces/mercury-gitops 2>/dev/null || true) && (mise trust /home/vscode 2>/dev/null || true)",
   "postStartCommand": "sudo -u vscode /home/vscode/bin/chezmoi apply --source ~/.local/share/dotfiles 2>/dev/null || true",
   "customizations": {
     "vscode": {
@@ -21,8 +21,8 @@
     }
   },
   "mounts": [
-    "source=${localEnv:HOME}/.ssh/mercury,target=/home/vscode/.ssh/mercury,type=bind,consistency=cached,readonly",
-    "source=${localEnv:HOME}/.ssh/mercury.pub,target=/home/vscode/.ssh/mercury.pub,type=bind,consistency=cached,readonly"
+    "source=${localEnv:HOME}/.ssh/mercury,target=/home/vscode/.ssh/mercury,type=bind,consistency=cached",
+    "source=${localEnv:HOME}/.ssh/mercury.pub,target=/home/vscode/.ssh/mercury.pub,type=bind,consistency=cached"
   ],
   "remoteEnv": {
     "GITHUB_TOKEN": "${localEnv:GITHUB_TOKEN}"
