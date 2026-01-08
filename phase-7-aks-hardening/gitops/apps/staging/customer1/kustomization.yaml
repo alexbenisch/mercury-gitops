@@ -9,21 +9,24 @@ patches:
     patch: |-
       - op: replace
         path: /spec/parameters/userAssignedIdentityID
-        value: "2b36e208-a060-4a4b-8ba5-00bf7addb724"
+        value: "10ebab78-f6c8-4d5e-ac64-c0d85fb031d0"
       - op: replace
         path: /spec/parameters/tenantId
-        value: "36e054ee-92ea-404f-97ee-2859b2462cd6"
+        value: "6c0d1498-a808-4d41-a865-fdebeb412738"
   - target:
       kind: ObjectStore
       name: customer1-objectstore
     patch: |-
       - op: replace
         path: /spec/configuration/destinationPath
-        value: "https://alexmercurybackup.blob.core.windows.net/customer1"
+        value: "https://mercurybackupsstaging.blob.core.windows.net/customer1"
   - target:
-      kind: Cluster
-      name: customer1-db
+      kind: Ingress
+      name: customer1-ingress
     patch: |-
       - op: replace
-        path: /spec/backup/barmanObjectStore/destinationPath
-        value: "https://alexmercurybackup.blob.core.windows.net/customer1"
+        path: /spec/tls/0/hosts/0
+        value: "customer1.mercury-staging.kubecraftlabs.com"
+      - op: replace
+        path: /spec/rules/0/host
+        value: "customer1.mercury-staging.kubecraftlabs.com"
