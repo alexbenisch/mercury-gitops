@@ -51,6 +51,15 @@ mercury-gitops/
         └── customer1/
 ```
 
+## Documentation
+
+For detailed guides and troubleshooting:
+
+- **[Phase 5-6 Prerequisites](docs/phase5-6_prerequisites.md)** - Setup requirements, timing considerations, and post-deployment verification
+- **[Deployment Guide](docs/deployment-guide.md)** - Comprehensive step-by-step deployment instructions
+- **[Deployment Lessons (2026-01-08)](docs/deployment-lessons-2026-01-08.md)** - Recent issues, solutions, and workflow improvements
+- **[Troubleshooting Guide](docs/troubleshooting.md)** - Common issues and how to resolve them
+
 ## Prerequisites
 
 Before getting started, you'll need to install the following tools:
