@@ -36,3 +36,7 @@ override.tf.json
 .terraformrc
 terraform.rc
 .claude/
+
+# Ignore phase directories
+phase-6*/
+phase-7*/

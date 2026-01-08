@@ -13,13 +13,14 @@ patches:
       - op: replace
         path: /spec/parameters/tenantId
         value: "36e054ee-92ea-404f-97ee-2859b2462cd6"
-  - target:
-      kind: ObjectStore
-      name: customer1-objectstore
-    patch: |-
-      - op: replace
-        path: /spec/configuration/destinationPath
-        value: "https://alexmercurybackup.blob.core.windows.net/customer1"
+  # ObjectStore patch commented out - CRD not available
+  # - target:
+  #     kind: ObjectStore
+  #     name: customer1-objectstore
+  #   patch: |-
+  #     - op: replace
+  #       path: /spec/configuration/destinationPath
+  #       value: "https://alexmercurybackup.blob.core.windows.net/customer1"
   - target:
       kind: Cluster
       name: customer1-db
