@@ -55,6 +55,203 @@ kubectl get deployment -n cnpg-system cnpg-controller-manager \
 
 ---
 
+## CloudNativePG Database Recovery Failure - Missing barman-cloud Plugin
+
+### Issue: Database cluster fails to start with "unknown plugin" error
+
+**Symptoms:**
+```bash
+# n8n pod is crashing
+kubectl get pods -n customer1 | grep n8n
+# customer1-n8n-xxx   0/1     CrashLoopBackOff
+
+# n8n logs show database connection error
+kubectl logs -n customer1 customer1-n8n-xxx --tail=20
+# Error output:
+# There was an error initializing DB
+# getaddrinfo ENOTFOUND customer1-db-rw.customer1.svc.cluster.local
+
+# Database cluster exists but isn't ready
+kubectl get clusters.postgresql.cnpg.io -n customer1
+# NAME            AGE   INSTANCES   READY   STATUS
+# customer1-db2   74m                       Cluster cannot proceed to reconciliation due to an unknown plugin being required
+
+# Cluster description shows plugin error
+kubectl describe cluster.postgresql.cnpg.io customer1-db2 -n customer1
+# Phase: Cluster cannot proceed to reconciliation due to an unknown plugin being required
+# Phase Reason: Unknown plugin: 'barman-cloud.cloudnative-pg.io'
+```
+
+**Root Cause:**
+The database configuration (`database.yaml`) is set up to recover from scheduled backups using the `barman-cloud.cloudnative-pg.io` plugin, but this plugin is not installed in the cluster. The CloudNativePG operator alone doesn't include backup/restore plugins - they must be installed separately.
+
+The database is configured with:
+1. **Recovery bootstrap** - attempting to restore from Azure Blob Storage backups
+2. **ObjectStore resource** - references `customer1-objectstore` which requires the `barmancloud.cnpg.io/v1` CRD
+3. **Scheduled backups** - configured to run every 5 minutes
+
+Without the plugin:
+- The `ObjectStore` CRD doesn't exist
+- The database cluster can't bootstrap from recovery
+- n8n can't connect because the database never starts
+
+**Diagnosis:**
+```bash
+# Check if barman-cloud plugin is installed
+kubectl get helmrelease -n flux-system | grep barman
+# Expected: Should show cnpg-plugin-barman-cloud
+
+# Check if ObjectStore CRD exists
+kubectl api-resources | grep -i objectstore
+# Expected: Should show objectstores.barmancloud.cnpg.io
+
+# Check database configuration
+kubectl get cluster customer1-db2 -n customer1 -o yaml | grep -A 5 "plugin:"
+# Will show: plugin.name: barman-cloud.cloudnative-pg.io
+
+# Check what resources are commented out
+grep -n "objectstore" apps/base/customer1/kustomization.yaml
+# May show: #- objectstore.yaml (commented out)
+```
+
+**Solution:**
+
+Install the barman-cloud plugin via Flux:
+
+1. Create the plugin HelmRelease:
+```bash
+cat > infrastructure/controllers/staging/cnpg/plugin-release.yaml <<EOF
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: cnpg-plugin-barman-cloud
+  namespace: flux-system
+spec:
+  interval: 30m
+  targetNamespace: cnpg-system
+  releaseName: cnpg-plugin-barman-cloud
+  chart:
+    spec:
+      chart: plugin-barman-cloud
+      version: "0.3.1"
+      sourceRef:
+        kind: HelmRepository
+        name: cnpg
+        namespace: flux-system
+      interval: 12h
+EOF
+```
+
+2. Update the CNPG kustomization to include the plugin:
+```bash
+# Edit infrastructure/controllers/staging/cnpg/kustomization.yaml
+# Add: - plugin-release.yaml to resources
+```
+
+3. Restore ObjectStore resource in customer1 kustomization:
+```bash
+# Edit apps/base/customer1/kustomization.yaml
+# Uncomment: - objectstore.yaml
+
+# Edit apps/staging/customer1/kustomization.yaml
+# Uncomment the ObjectStore patch section
+```
+
+4. Commit and let Flux reconcile:
+```bash
+git add infrastructure/controllers/staging/cnpg/plugin-release.yaml
+git add infrastructure/controllers/staging/cnpg/kustomization.yaml
+git add apps/base/customer1/kustomization.yaml
+git add apps/staging/customer1/kustomization.yaml
+git commit -m "fix: add barman-cloud plugin for database backup/restore"
+git push
+
+# Wait for Flux to reconcile (or trigger manually)
+flux reconcile source git mercury-system
+flux reconcile kustomization mercury-system-infra-controllers
+flux reconcile kustomization mercury-system-apps
+```
+
+**Verification:**
+```bash
+# 1. Check plugin is installed
+kubectl get helmrelease -n flux-system cnpg-plugin-barman-cloud
+# Expected: READY = True
+
+# 2. Check plugin pods are running
+kubectl get pods -n cnpg-system | grep barman
+# Expected: barman-cloud plugin pods running
+
+# 3. Check ObjectStore CRD exists
+kubectl api-resources | grep objectstore
+# Expected: objectstores.barmancloud.cnpg.io
+
+# 4. Check ObjectStore resource is created
+kubectl get objectstore -n customer1
+# Expected: customer1-objectstore
+
+# 5. Check database cluster status
+kubectl get clusters.postgresql.cnpg.io -n customer1
+# Expected: STATUS shows cluster is starting/ready
+
+# 6. Wait for database pods to start
+kubectl get pods -n customer1 | grep db
+# Expected: customer1-db2-1, customer1-db2-2, customer1-db2-3 running
+
+# 7. Check n8n pod recovers
+kubectl get pods -n customer1 | grep n8n
+# Expected: STATUS = Running, READY = 1/1
+```
+
+**Key Learnings:**
+- CloudNativePG plugins (like barman-cloud) are separate Helm charts that must be installed alongside the operator
+- The barman-cloud plugin provides:
+  - ObjectStore CRD for defining backup destinations
+  - Barman integration for backup/restore to S3/Azure Blob/GCS
+  - Recovery bootstrap capability
+- Database clusters configured for recovery will not start without the required plugin
+- Always install required plugins before configuring clusters that depend on them
+- The plugin version must be compatible with the CNPG operator version (0.3.1 works with CNPG 1.27+)
+
+**Alternative: Fresh Database Without Recovery**
+
+If you don't need to recover from backups and want a fresh database:
+
+1. Edit `apps/base/customer1/database.yaml`:
+```yaml
+# Comment out recovery bootstrap
+#  bootstrap:
+#    recovery:
+#      database: app
+#      owner: app
+#      source: source
+#      secret:
+#        name: customer1-db-credentials
+
+# Uncomment initdb bootstrap (lines 9-14)
+  bootstrap:
+    initdb:
+      database: app
+      owner: app
+      secret:
+        name: customer1-db-credentials
+
+# Comment out externalClusters section (lines 24-30)
+```
+
+2. Keep backup configuration for future backups (but remove recovery reference)
+3. Commit and let Flux reconcile
+
+This creates a fresh database without requiring the plugin, but you lose scheduled backup/restore capabilities.
+
+**Prevention:**
+- When configuring database recovery, ensure the barman-cloud plugin is installed first
+- Include plugin installation in infrastructure setup documentation
+- Test recovery procedures in staging before production
+- Document plugin version requirements alongside CNPG operator versions
+
+---
+
 ## Traefik TLS Routing Issues
 
 ### Issue: Traefik reports "secret does not exist" but certificate is valid
