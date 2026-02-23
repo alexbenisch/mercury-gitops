@@ -1,5 +1,5 @@
 [tools]
-azure-cli = "latest"
+# azure-cli installed via apt (see .devcontainer/Dockerfile)
 claude = { version = "latest", bin = "claude", platforms = """
 [linux-arm64]
 url = "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/{version}/linux-arm64/claude"
