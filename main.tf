@@ -14,25 +14,27 @@ terraform {
 
 provider "azurerm" {
   features {}
-  subscription_id = "6280aae8-f9e7-4540-9aa3-646c95dd57d1"
+  subscription_id = var.subscription_id
 }
 
 resource "azurerm_resource_group" "aks" {
-  name     = "rg-cloud-course-aks"
-  location = "North Europe"
+  name     = var.resource_group_name
+  location = var.location
+  tags     = var.tags
 }
 
 resource "azurerm_kubernetes_cluster" "main" {
-  name                = "mercury-staging"
+  name                = var.cluster_name
   location            = azurerm_resource_group.aks.location
   resource_group_name = azurerm_resource_group.aks.name
   dns_prefix          = "staging"
-  kubernetes_version  = "1.32.0"
+  kubernetes_version  = var.kubernetes_version
+  tags                = var.tags
 
   default_node_pool {
     name       = "default"
-    node_count = 2
-    vm_size    = "Standard_D2s_v3"
+    node_count = var.node_count
+    vm_size    = var.node_vm_size
   }
 
   identity {
@@ -65,11 +67,11 @@ resource "azurerm_kubernetes_flux_configuration" "main" {
   namespace  = "flux-system"
 
   git_repository {
-    url             = "ssh://git@github.com/alexbenisch/mercury-gitops"
+    url             = var.flux_git_repo_url
     reference_type  = "branch"
-    reference_value = "main"
+    reference_value = var.flux_git_branch
 
-    ssh_private_key_base64 = base64encode(file("~/.ssh/mercury"))
+    ssh_private_key_base64 = base64encode(file(var.flux_ssh_key_path))
   }
 
   kustomizations {
@@ -105,16 +107,17 @@ resource "azurerm_kubernetes_flux_configuration" "main" {
 data "azurerm_client_config" "current" {}
 
 resource "azurerm_key_vault" "mercury_vault" {
-  name                = "kv-mercury-staging"
+  name                = var.key_vault_name
   location            = azurerm_resource_group.aks.location
   resource_group_name = azurerm_resource_group.aks.name
   tenant_id           = data.azurerm_client_config.current.tenant_id
   sku_name            = "standard"
 
-  soft_delete_retention_days = 7
-  purge_protection_enabled   = false
+  soft_delete_retention_days = var.soft_delete_retention_days
+  purge_protection_enabled   = var.purge_protection_enabled
 
   rbac_authorization_enabled = true
+  tags                       = var.tags
   depends_on                 = [azurerm_kubernetes_cluster.main]
 }
 
@@ -143,7 +146,7 @@ resource "random_password" "customer1_db_password" {
 
 resource "azurerm_key_vault_secret" "customer1_db_user" {
   name         = "customer1-db-user"
-  value        = "app"
+  value        = var.customer1_db_username
   key_vault_id = azurerm_key_vault.mercury_vault.id
 
   depends_on = [azurerm_role_assignment.kv_admin]
@@ -173,15 +176,16 @@ output "aks_keyvault_secrets_provider_client_id" {
 ## CNPG Backup Storage
 
 resource "azurerm_storage_account" "cnpg_backups" {
-  name                     = "alexmercurybackup"
+  name                     = var.storage_account_name
   resource_group_name      = azurerm_resource_group.aks.name
   location                 = azurerm_resource_group.aks.location
   account_tier             = "Standard"
   account_replication_type = "LRS"
   min_tls_version          = "TLS1_2"
+  tags                     = var.tags
 
   blob_properties {
-    versioning_enabled = true
+    versioning_enabled = var.storage_versioning_enabled
   }
 }
 
@@ -197,7 +201,7 @@ data "azurerm_storage_account_blob_container_sas" "customer1" {
   https_only        = true
 
   start  = timestamp()
-  expiry = timeadd(timestamp(), "17520h") # 2 years
+  expiry = timeadd(timestamp(), "${var.sas_token_expiry_hours}h")
 
   permissions {
     read   = true
