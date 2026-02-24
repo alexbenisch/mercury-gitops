@@ -160,6 +160,14 @@ resource "azurerm_key_vault_secret" "customer1_db_password" {
   depends_on = [azurerm_role_assignment.kv_admin]
 }
 
+resource "azurerm_key_vault_secret" "cloudflare_api_token" {
+  name         = "cloudflare-api-token"
+  value        = var.cloudflare_api_token
+  key_vault_id = azurerm_key_vault.mercury_vault.id
+
+  depends_on = [azurerm_role_assignment.kv_admin]
+}
+
 output "key_vault_name" {
   value = azurerm_key_vault.mercury_vault.name
 }

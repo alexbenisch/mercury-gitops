@@ -24,6 +24,9 @@ sas_token_expiry_hours     = 17520 # 2 years
 # Database Configuration
 customer1_db_username = "app"
 
+# Cloudflare API Token (for DNS-01 ACME challenges)
+cloudflare_api_token = "your-cloudflare-api-token-here"
+
 # Flux CD GitOps
 flux_git_repo_url  = "ssh://git@github.com/alexbenisch/mercury-gitops"
 flux_git_branch    = "main"

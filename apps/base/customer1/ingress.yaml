@@ -8,10 +8,10 @@ spec:
   ingressClassName: traefik-traefik
   tls:
     - hosts:
-        - customer1.mercury.kubetest.uk
+        - customer1.mercury-gitops.kubetest.uk
       secretName: customer1-tls
   rules:
-    - host: customer1.mercury.kubetest.uk
+    - host: customer1.mercury-gitops.kubetest.uk
       http:
         paths:
           - path: /

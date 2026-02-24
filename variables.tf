@@ -104,6 +104,12 @@ variable "sas_token_expiry_hours" {
   default     = 17520
 }
 
+variable "cloudflare_api_token" {
+  description = "Cloudflare API token for DNS-01 ACME challenges"
+  type        = string
+  sensitive   = true
+}
+
 variable "tags" {
   description = "Common tags to apply to all resources"
   type        = map(string)
